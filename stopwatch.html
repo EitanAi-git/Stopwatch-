@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stopwatch</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #181b24;
+    --ring-track: #252a36;
+    --accent: #4f8cff;
+    --accent-2: #7c5cff;
+    --text: #e8ebf2;
+    --muted: #8a91a3;
+    --green: #2ecc71;
+    --red: #ff5c5c;
+    --border: #2a2f3c;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f2f4f8;
+      --card: #ffffff;
+      --ring-track: #e4e8f0;
+      --text: #1a1d26;
+      --muted: #6b7285;
+      --border: #e1e5ee;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 16px;
+  }
+  .card {
+    width: 100%;
+    max-width: 400px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 32px 24px 24px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.25);
+  }
+  h1 {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .dial {
+    position: relative;
+    width: 260px;
+    max-width: 100%;
+    aspect-ratio: 1;
+    margin: 0 auto 28px;
+  }
+  .dial svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .track { fill: none; stroke: var(--ring-track); stroke-width: 10; }
+  .progress {
+    fill: none;
+    stroke: url(#grad);
+    stroke-width: 10;
+    stroke-linecap: round;
+  }
+  .readout {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .time { font-size: 44px; font-weight: 300; letter-spacing: -.02em; }
+  .ms { font-size: 22px; color: var(--muted); margin-top: 2px; }
+  .controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+  button {
+    flex: 1;
+    max-width: 130px;
+    padding: 14px 0;
+    border: none;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .08s, filter .15s, background .2s;
+  }
+  button:active { transform: scale(.96); }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-start { background: var(--green); color: #fff; }
+  .btn-start.running { background: var(--red); }
+  .btn-secondary {
+    background: var(--ring-track);
+    color: var(--text);
+  }
+  .laps {
+    margin-top: 24px;
+    max-height: 200px;
+    overflow-y: auto;
+    list-style: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .laps li {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 4px;
+    border-top: 1px solid var(--border);
+    font-size: 15px;
+  }
+  .laps li span:first-child { color: var(--muted); }
+  .laps li.best span:last-child { color: var(--green); }
+  .laps li.worst span:last-child { color: var(--red); }
+  .hint {
+    margin-top: 16px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  kbd {
+    font-family: inherit;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Stopwatch</h1>
+
+    <div class="dial">
+      <svg viewBox="0 0 120 120">
+        <defs>
+          <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#4f8cff"/>
+            <stop offset="100%" stop-color="#7c5cff"/>
+          </linearGradient>
+        </defs>
+        <circle class="track" cx="60" cy="60" r="52"/>
+        <circle class="progress" id="progress" cx="60" cy="60" r="52"/>
+      </svg>
+      <div class="readout">
+        <div class="time" id="time">00:00</div>
+        <div class="ms" id="ms">.00</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn-secondary" id="lapBtn" disabled>Lap</button>
+      <button class="btn-start" id="startBtn">Start</button>
+      <button class="btn-secondary" id="resetBtn" disabled>Reset</button>
+    </div>
+
+    <ul class="laps" id="laps"></ul>
+
+    <p class="hint"><kbd>Space</kbd> start/stop · <kbd>L</kbd> lap · <kbd>R</kbd> reset</p>
+  </main>
+
+<script>
+  const timeEl = document.getElementById('time');
+  const msEl = document.getElementById('ms');
+  const progress = document.getElementById('progress');
+  const startBtn = document.getElementById('startBtn');
+  const lapBtn = document.getElementById('lapBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const lapsEl = document.getElementById('laps');
+
+  const CIRC = 2 * Math.PI * 52;
+  progress.style.strokeDasharray = CIRC;
+  progress.style.strokeDashoffset = CIRC;
+
+  let running = false;
+  let startTime = 0;
+  let elapsed = 0;
+  let rafId = null;
+  let laps = [];
+  let lastLapTotal = 0;
+
+  function format(ms) {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor(ms / 60000) % 60;
+    const s = Math.floor(ms / 1000) % 60;
+    const cs = Math.floor(ms / 10) % 100;
+    const pad = n => String(n).padStart(2, '0');
+    const main = (h > 0 ? h + ':' : '') + pad(m) + ':' + pad(s);
+    return { main, cs: '.' + pad(cs) };
+  }
+
+  function render() {
+    const total = running ? elapsed + (performance.now() - startTime) : elapsed;
+    const f = format(total);
+    timeEl.textContent = f.main;
+    msEl.textContent = f.cs;
+    // ring completes one revolution per minute
+    const frac = (total % 60000) / 60000;
+    progress.style.strokeDashoffset = CIRC * (1 - frac);
+    if (running) rafId = requestAnimationFrame(render);
+  }
+
+  function currentTotal() {
+    return running ? elapsed + (performance.now() - startTime) : elapsed;
+  }
+
+  function toggle() {
+    if (running) {
+      elapsed += performance.now() - startTime;
+      running = false;
+      cancelAnimationFrame(rafId);
+      startBtn.textContent = 'Start';
+      startBtn.classList.remove('running');
+      lapBtn.disabled = true;
+    } else {
+      startTime = performance.now();
+      running = true;
+      startBtn.textContent = 'Stop';
+      startBtn.classList.add('running');
+      lapBtn.disabled = false;
+      resetBtn.disabled = false;
+      render();
+    }
+  }
+
+  function lap() {
+    if (!running) return;
+    const total = currentTotal();
+    laps.push(total - lastLapTotal);
+    lastLapTotal = total;
+    renderLaps();
+  }
+
+  function renderLaps() {
+    lapsEl.innerHTML = '';
+    if (!laps.length) return;
+    const min = Math.min(...laps), max = Math.max(...laps);
+    for (let i = laps.length - 1; i >= 0; i--) {
+      const li = document.createElement('li');
+      if (laps.length > 1 && laps[i] === min) li.className = 'best';
+      if (laps.length > 1 && laps[i] === max) li.className = 'worst';
+      const f = format(laps[i]);
+      li.innerHTML = `<span>Lap ${i + 1}</span><span>${f.main}${f.cs}</span>`;
+      lapsEl.appendChild(li);
+    }
+  }
+
+  function reset() {
+    running = false;
+    cancelAnimationFrame(rafId);
+    elapsed = 0;
+    laps = [];
+    lastLapTotal = 0;
+    startBtn.textContent = 'Start';
+    startBtn.classList.remove('running');
+    lapBtn.disabled = true;
+    resetBtn.disabled = true;
+    renderLaps();
+    render();
+  }
+
+  startBtn.addEventListener('click', toggle);
+  lapBtn.addEventListener('click', lap);
+  resetBtn.addEventListener('click', reset);
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); toggle(); }
+    else if (e.key === 'l' || e.key === 'L') lap();
+    else if (e.key === 'r' || e.key === 'R') reset();
+  });
+</script>
+</body>
+</html>
